@@ -57,7 +57,7 @@ async function main() {
       if (!process.env.OPENAI_API_KEY) {
         console.warn('⚠️  OPENAI_API_KEY not set — skipping summarisation')
       } else {
-        const result = await processUnprocessedItems(50)
+        const result = await processUnprocessedItems({ maxItems: 50 })
         console.log(`✅ Summarisation complete`)
         console.log(`   Processed: ${result.processed}`)
         console.log(`   Failed:    ${result.failed}`)

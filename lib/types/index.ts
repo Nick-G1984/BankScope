@@ -19,6 +19,20 @@ export type ConfidenceStatus = 'ai-generated' | 'reviewed' | 'pending'
 
 export type IngestionStatus = 'running' | 'completed' | 'failed'
 
+export type RegulatoryTheme =
+  | 'conduct'
+  | 'prudential'
+  | 'consumer-duty'
+  | 'complaints'
+  | 'governance'
+  | 'operational-resilience'
+  | 'aml-fraud'
+  | 'data-privacy'
+  | 'market-competition'
+  | 'other'
+
+export type ActionRequired = 'yes' | 'monitor' | 'awareness'
+
 // Core intelligence item — matches the Supabase table
 export interface IntelligenceItem {
   id: string
@@ -36,6 +50,12 @@ export interface IntelligenceItem {
   urgency: Urgency | null
   category_tags: string[]            // e.g. ["consumer duty", "CASS"]
   suggested_next_step: string | null
+  // --- Added in migration-001 ---
+  action_required: ActionRequired | null
+  regulatory_theme: RegulatoryTheme | null
+  deadline: string | null            // ISO date (YYYY-MM-DD) if a compliance deadline is mentioned
+  priority_rationale: string | null  // 1-2 sentence explanation of the priority score
+  // ------------------------------
   confidence_status: ConfidenceStatus
   is_processed: boolean
   created_at: string
@@ -78,7 +98,7 @@ export interface IngestionRun {
   source_results: SourceResult[] | null
 }
 
-// AI summary output — what OpenAI returns
+// AI summary output — what OpenAI returns (extended in migration-001)
 export interface AISummaryOutput {
   summary: string
   affected_audience: string[]
@@ -86,6 +106,10 @@ export interface AISummaryOutput {
   suggested_next_step: string
   category_tags: string[]
   priority_score: number
+  action_required: ActionRequired
+  regulatory_theme: RegulatoryTheme
+  deadline: string | null            // YYYY-MM-DD or null
+  priority_rationale: string
 }
 
 // Filter/search params for the dashboard

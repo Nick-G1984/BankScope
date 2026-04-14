@@ -135,6 +135,11 @@ export async function updateIntelligenceItemSummary(
     priority_score: number
     confidence_status: string
     is_processed: boolean
+    // Extended fields — added in migration-001 (optional for backward compat)
+    action_required?: string | null
+    regulatory_theme?: string | null
+    deadline?: string | null
+    priority_rationale?: string | null
   }
 ): Promise<void> {
   const db = createAdminClient()
@@ -219,6 +224,61 @@ export async function getDashboardStats(): Promise<{
     unprocessed: unprocessed.count ?? 0,
     today_items: todayItems.count ?? 0,
     sources_active: sources.count ?? 0,
+  }
+}
+
+// ============================================================
+// Source Health Tracking
+// ============================================================
+
+export interface SourceHealthUpdate {
+  success: boolean
+  items_fetched: number
+  items_new: number
+  error_message?: string | null
+}
+
+/**
+ * Update the health fields on a data_sources row after an ingestion run.
+ * Increments consecutive_failures on error; resets to 0 on success.
+ * Requires migration-001.sql to have been applied.
+ */
+export async function updateSourceHealth(
+  sourceName: string,
+  update: SourceHealthUpdate
+): Promise<void> {
+  const db = createAdminClient()
+  const now = new Date().toISOString()
+
+  const fields: Record<string, unknown> = {
+    last_attempted_at: now,
+    last_items_fetched: update.items_fetched,
+    last_items_new: update.items_new,
+  }
+
+  if (update.success) {
+    fields.last_success_at = now
+    fields.last_error = null
+    fields.consecutive_failures = 0
+  } else {
+    fields.last_error = update.error_message ?? 'Unknown error'
+    // Increment consecutive_failures via a read-modify-write
+    const { data: existing } = await db
+      .from('data_sources')
+      .select('consecutive_failures')
+      .eq('name', sourceName)
+      .single()
+    fields.consecutive_failures = ((existing as { consecutive_failures: number } | null)?.consecutive_failures ?? 0) + 1
+  }
+
+  const { error } = await db
+    .from('data_sources')
+    .update(fields)
+    .eq('name', sourceName)
+
+  if (error) {
+    // Non-fatal — log but don't throw so ingestion continues
+    console.error(`[updateSourceHealth] Failed to update health for ${sourceName}: ${error.message}`)
   }
 }
 

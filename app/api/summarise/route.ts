@@ -33,9 +33,8 @@ export async function POST(request: NextRequest) {
       const summary = await summariseSingleItem(body.item_id)
       return NextResponse.json({ success: true, summary })
     } else {
-      // Process batch of unprocessed items
-      const batchSize = body.batch_size ?? 20
-      const result = await processUnprocessedItems(batchSize)
+      // Process all unprocessed items (batch_size is ignored — kept for API compat)
+      const result = await processUnprocessedItems({ maxItems: body.batch_size ?? 200 })
       return NextResponse.json({ success: true, ...result })
     }
   } catch (err) {
