@@ -5,221 +5,241 @@ import type RSSParser from 'rss-parser'
 const UA = 'BankScope-Intelligence/1.0 (regulatory intelligence aggregator; +https://bankscope.io)'
 const BASE_BOE = 'https://www.bankofengland.co.uk'
 
+// ── Content-type classifiers ───────────────────────────────────────────────
+
 function praCategorise(item: RSSParser.Item): import('../types').ContentType {
   const title = (item.title || '').toLowerCase()
   const cats = ((item.categories || []) as string[]).map((c) => c.toLowerCase()).join(' ')
   const all = title + ' ' + cats
 
   if (all.includes('consultation') || /\bcp\d/.test(all)) return 'consultation'
-  if (all.includes('policy statement') || /\bps\d/.test(all) || all.includes('supervisory statement') || /\bss\d/.test(all)) return 'policy-statement'
+  if (
+    all.includes('policy statement') ||
+    /\bps\d/.test(all) ||
+    all.includes('supervisory statement') ||
+    /\bss\d/.test(all)
+  )
+    return 'policy-statement'
   if (all.includes('speech')) return 'speech'
   if (all.includes('enforcement') || all.includes('final notice')) return 'enforcement'
-  if (all.includes('publication') || all.includes('report') || all.includes('guidance')) return 'publication'
+  if (
+    all.includes('report') ||
+    all.includes('digest') ||
+    all.includes('publication') ||
+    all.includes('guidance')
+  )
+    return 'publication'
   return 'news'
 }
 
-function praContentType(title: string): import('../types').ContentType {
-  return praCategorise({ title } as RSSParser.Item)
+function releaseTagToContentType(tag: string): import('../types').ContentType {
+  const t = tag.toLowerCase()
+  if (t.includes('consultation')) return 'consultation'
+  if (t.includes('policy statement') || t.includes('supervisory statement')) return 'policy-statement'
+  if (t.includes('speech')) return 'speech'
+  if (t.includes('enforcement') || t.includes('final notice')) return 'enforcement'
+  if (t.includes('digest') || t.includes('report') || t.includes('publication') || t.includes('research'))
+    return 'publication'
+  return 'news'
 }
 
+// ── BoE internal API fallback ──────────────────────────────────────────────
+
 /**
- * Scrape the BoE prudential regulation news listing page.
- * Used as a fallback when all RSS/Atom feeds are unreachable.
+ * BoE internal jQuery Ajax endpoint — discovered April 2026 via browser
+ * network inspection of /news/prudential-regulation.
  *
- * The BoE news listing page at /news/prudential-regulation uses a
- * server-rendered HTML structure. This scraper tries several selector
- * patterns in order of specificity, falling through to broad fallbacks.
+ * The page's boe.min.js does:
+ *   $.ajax({ url: '/_api/News/RefreshPagedNewsList', type: 'post', data: p })
+ * where p = { Id, PageSize, NewsTypes, NewsTypesAvailable, Taxonomies,
+ *             TaxonomiesAvailable, Page, Direction, Grid, InfiniteScrolling }
+ *
+ * Config values read from CP.BOE on the page (April 2026):
+ *   Id:        {CE377CC8-BFBC-418B-B4D9-DBC1C64774A8}   (PRA news data source)
+ *   PageSize:  30
+ *   NewsTypes: ['65d34b0d42784c6bb1dd302c1ed63653']
+ *
+ * Response JSON: { Results: '<html string>', Refiners: '<html string>' }
+ * Each article card is a <div class="col3"><a class="release"> ... </a></div>
+ * containing: <time datetime="YYYY-MM-DD">, <h3 itemprop="name">, <div class="release-tag">
  */
-async function scrapePRANewsPage(): Promise<{ items: RawSourceItem[]; errors: string[] }> {
+const BOE_API_URL = `${BASE_BOE}/_api/News/RefreshPagedNewsList`
+const BOE_PRA_DATA_SOURCE_ID = '{CE377CC8-BFBC-418B-B4D9-DBC1C64774A8}'
+const BOE_PRA_NEWS_TYPE = '65d34b0d42784c6bb1dd302c1ed63653'
+
+async function fetchBOEApiPage(page = 1): Promise<{ items: RawSourceItem[]; errors: string[] }> {
   const errors: string[] = []
   const items: RawSourceItem[] = []
 
-  const pageUrl = `${BASE_BOE}/news/prudential-regulation`
+  const body = new URLSearchParams()
+  body.append('Id', BOE_PRA_DATA_SOURCE_ID)
+  body.append('PageSize', '30')
+  body.append('NewsTypes', BOE_PRA_NEWS_TYPE)
+  body.append('NewsTypesAvailable', BOE_PRA_NEWS_TYPE)
+  body.append('Taxonomies', '')
+  body.append('TaxonomiesAvailable', '')
+  body.append('Page', String(page))
+  body.append('Direction', '1')
+  body.append('Grid', 'false')
+  body.append('InfiniteScrolling', 'false')
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15_000)
 
   try {
+    const res = await fetch(BOE_API_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+        'User-Agent': UA,
+        Accept: 'application/json, text/javascript, */*',
+      },
+      body: body.toString(),
+    })
+
+    if (!res.ok) {
+      errors.push(`[PRA API] HTTP ${res.status} from ${BOE_API_URL}`)
+      return { items, errors }
+    }
+
+    const data = (await res.json()) as { Results?: string; Refiners?: string }
+    if (!data.Results) {
+      errors.push('[PRA API] Response missing Results field')
+      return { items, errors }
+    }
+
+    // Parse the rendered HTML with cheerio
     const cheerio = await import('cheerio')
+    const $ = cheerio.load(data.Results)
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 15_000)
-    let html: string
-    try {
-      const res = await fetch(pageUrl, {
-        signal: controller.signal,
-        headers: { 'User-Agent': UA, Accept: 'text/html' },
-      })
-      if (!res.ok) {
-        errors.push(`[PRA scraper] ${pageUrl} returned HTTP ${res.status}`)
-        return { items, errors }
+    $('.col3 a.release').each((_, el) => {
+      const $el = $(el)
+      const href = $el.attr('href')
+      if (!href) return
+
+      const link = href.startsWith('http') ? href : `${BASE_BOE}${href}`
+
+      // Title: prefer list-view h3 (same text, just avoids duplicates from grid/list h3 pair)
+      const title =
+        $el.find('h3.list, h3[itemprop="name"]').first().text().trim() ||
+        $el.find('h3').first().text().trim()
+      if (!title || title.length < 5) return
+
+      // Date from <time datetime="...">
+      const dateAttr = $el.find('time.release-date').attr('datetime')
+      let publish_date: string | null = null
+      if (dateAttr) {
+        const d = new Date(dateAttr)
+        if (!isNaN(d.getTime())) publish_date = d.toISOString()
       }
-      html = await res.text()
-    } finally {
-      clearTimeout(timer)
-    }
 
-    const $ = cheerio.load(html)
-    const seen = new Set<string>()
+      // Content type from release-tag text, e.g. "Prudential Regulation // Consultation paper"
+      const tagText = $el.find('.release-tag').text().trim()
+      const tagPart = tagText.includes('//') ? tagText.split('//')[1].trim() : tagText
+      const content_type = tagPart ? releaseTagToContentType(tagPart) : praCategorise({ title } as RSSParser.Item)
 
-    // ── Selector cascade: try from most specific to most general ──────────
-    // Pattern 1: BoE-style news listing with .page-filter-results__result or similar wrappers
-    const SELECTOR_PATTERNS: Array<{
-      container: string
-      titleLink: string
-      date: string
-      excerpt: string
-    }> = [
-      // BoE redesign (2024+) — filter results
-      {
-        container: '.page-filter-results__result, [class*="filter-result"]',
-        titleLink: 'h2 a, h3 a, .result__title a',
-        date: 'time, [class*="date"], [class*="Date"]',
-        excerpt: 'p:not([class*="type"]):not([class*="date"]):not([class*="tag"])',
-      },
-      // BoE legacy news list
-      {
-        container: '.news-list__item, .news-item, [class*="news-list"] li',
-        titleLink: 'h2 a, h3 a, a',
-        date: 'time, [class*="date"], .date',
-        excerpt: 'p',
-      },
-      // Generic article elements
-      {
-        container: 'article',
-        titleLink: 'h2 a, h3 a, h4 a',
-        date: 'time, [class*="date"], .date',
-        excerpt: 'p',
-      },
-      // List items with a heading-level link (last resort)
-      {
-        container: 'main li, .content li',
-        titleLink: 'h2 a, h3 a, a[href*="/prudential"], a[href*="/news"]',
-        date: 'time, [class*="date"]',
-        excerpt: 'p',
-      },
-    ]
-
-    for (const pattern of SELECTOR_PATTERNS) {
-      const elements = $(pattern.container)
-      if (elements.length === 0) continue
-
-      elements.each((_, el) => {
-        const $el = $(el)
-        const titleEl = $el.find(pattern.titleLink).first()
-        const title = titleEl.text().trim()
-        const href = titleEl.attr('href')
-        if (!title || !href || title.length < 5) return
-
-        const link = href.startsWith('http') ? href : `${BASE_BOE}${href}`
-        const sourceId = generateSourceId(link, title)
-        if (seen.has(sourceId)) return
-        seen.add(sourceId)
-
-        // Date extraction
-        const dateEl = $el.find(pattern.date).first()
-        const dateText = dateEl.attr('datetime') || dateEl.text().trim()
-        let publish_date: string | null = null
-        if (dateText) {
-          const d = new Date(dateText)
-          if (!isNaN(d.getTime())) publish_date = d.toISOString()
-        }
-
-        const excerpt = $el.find(pattern.excerpt).first().text().trim().slice(0, 600) || null
-
-        items.push({
-          source_id: sourceId,
-          title,
-          source_name: 'PRA',
-          source_type: 'regulator',
-          content_type: praContentType(title),
-          publish_date,
-          source_url: link,
-          raw_excerpt: excerpt,
-        })
+      items.push({
+        source_id: generateSourceId(link, title),
+        title,
+        source_name: 'PRA',
+        source_type: 'regulator',
+        content_type,
+        publish_date,
+        source_url: link,
+        raw_excerpt: null,
       })
+    })
 
-      if (items.length > 0) {
-        console.log(`[PRA scraper] Pattern "${pattern.container}" matched ${items.length} items`)
-        break // Found items — stop trying more patterns
-      }
-    }
-
-    if (items.length === 0) {
-      // Last-resort: grab any heading link that points to /prudential-regulation or /news
-      $('a[href*="prudential-regulation"], a[href*="/news/20"]').each((_, el) => {
-        const $el = $(el)
-        const title = $el.text().trim()
-        const href = $el.attr('href')
-        if (!title || !href || title.length < 10) return
-
-        const link = href.startsWith('http') ? href : `${BASE_BOE}${href}`
-        const sourceId = generateSourceId(link, title)
-        if (seen.has(sourceId)) return
-        seen.add(sourceId)
-
-        items.push({
-          source_id: sourceId,
-          title,
-          source_name: 'PRA',
-          source_type: 'regulator',
-          content_type: praContentType(title),
-          publish_date: null,
-          source_url: link,
-          raw_excerpt: null,
-        })
-      })
-
-      if (items.length > 0) {
-        console.log(`[PRA scraper] Last-resort link scrape found ${items.length} items`)
-      } else {
-        errors.push(`[PRA scraper] No items found from ${pageUrl} — page structure may have changed. Run: npm run probe -- --pra --dump-html`)
-      }
-    }
+    console.log(`[PRA API] Page ${page}: ${items.length} items`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    errors.push(`[PRA scraper] Exception: ${msg}`)
+    errors.push(`[PRA API] Exception on page ${page}: ${msg}`)
+  } finally {
+    clearTimeout(timer)
   }
 
   return { items, errors }
 }
 
+// ── Main ingest ────────────────────────────────────────────────────────────
+
 export async function ingestPRA(): Promise<SourceResult & { items: RawSourceItem[] }> {
-  // ── Tier 1: try known RSS/Atom feeds ────────────────────────────────────
-  const { items: rssItems, errors: rssErrors, successUrl } = await fetchRSSFeed({
-    // Primary: BoE PRA-specific publications RSS (confirmed via aggregators)
-    url: 'https://www.bankofengland.co.uk/rss/prudential-regulation/publications',
+  const allItems: RawSourceItem[] = []
+  const allErrors: string[] = []
+  const seen = new Set<string>()
+
+  // ── Tier 1: Dedicated PRA publications RSS ─────────────────────────────
+  // URL confirmed live April 2026 from bankofengland.co.uk/rss page.
+  // Returns 50 items covering CP, PS, SS, digests, speeches.
+  // Previous code used /rss/prudential-regulation/publications (404) —
+  // the correct URL omits the slash: /rss/prudential-regulation-publications
+  const rssResult = await fetchRSSFeed({
+    url: `${BASE_BOE}/rss/prudential-regulation-publications`,
     fallbackUrls: [
-      // Variant: PRA news RSS
-      'https://www.bankofengland.co.uk/rss/prudential-regulation/news',
-      // Variant: generic PRA RSS (tried before, but worth trying again as BoE may have restored it)
-      'https://www.bankofengland.co.uk/rss/prudential-regulation',
-      // GOV.UK atom for PRA (was 404 before but may be restored)
-      'https://www.gov.uk/government/organisations/prudential-regulation-authority.atom',
+      // Broader BoE news RSS — contains some PRA news items among wider BoE news
+      `${BASE_BOE}/rss/news`,
     ],
     source_name: 'PRA',
     source_type: 'regulator',
-    default_content_type: 'news',
+    default_content_type: 'publication',
     categorise: praCategorise,
   })
 
-  if (successUrl !== null && rssItems.length > 0) {
-    console.log(`[PRA] RSS success via ${successUrl}: ${rssItems.length} items`)
-    return {
-      source_name: 'PRA',
-      items_fetched: rssItems.length,
-      items_new: 0,
-      errors: rssErrors,
-      items: rssItems,
+  if (rssResult.successUrl !== null && rssResult.items.length > 0) {
+    console.log(`[PRA] RSS via ${rssResult.successUrl}: ${rssResult.items.length} items`)
+
+    // If we fell back to the generic /rss/news feed, filter to PRA-relevant items only
+    const isPRAFeed = rssResult.successUrl.includes('prudential-regulation')
+    const filtered = isPRAFeed
+      ? rssResult.items
+      : rssResult.items.filter(
+          (item) =>
+            (item.source_url ?? '').includes('/prudential-regulation') ||
+            (item.source_url ?? '').includes('/pra') ||
+            item.title.toLowerCase().includes('prudential') ||
+            /\b(cp|ps|ss)\d+\/\d+/i.test(item.title)
+        )
+
+    for (const item of filtered) {
+      if (!seen.has(item.source_id)) {
+        seen.add(item.source_id)
+        allItems.push(item)
+      }
+    }
+  } else {
+    allErrors.push(...rssResult.errors)
+    console.warn('[PRA] All RSS feeds failed — falling back to BoE internal API')
+  }
+
+  // ── Tier 2: BoE internal API (supplement or fallback) ──────────────────
+  // Always run the API to supplement the RSS with any items not yet captured
+  // (the RSS cap is 50 items; the API gives the same pool sorted by date).
+  // If RSS succeeded we just deduplicate; if it failed we rely on API entirely.
+  const { items: apiItems, errors: apiErrors } = await fetchBOEApiPage(1)
+  allErrors.push(...apiErrors)
+
+  for (const item of apiItems) {
+    if (!seen.has(item.source_id)) {
+      seen.add(item.source_id)
+      allItems.push(item)
     }
   }
 
-  // ── Tier 2: HTML scraper fallback ────────────────────────────────────────
-  console.warn('[PRA] All RSS feeds failed — falling back to HTML scraper')
-  const { items: scrapedItems, errors: scrapeErrors } = await scrapePRANewsPage()
+  if (allItems.length === 0) {
+    allErrors.push(
+      '[PRA] Zero items from both RSS and API. Check network access to bankofengland.co.uk.'
+    )
+  }
+
+  console.log(`[PRA] Total unique items: ${allItems.length}`)
 
   return {
     source_name: 'PRA',
-    items_fetched: scrapedItems.length,
+    items_fetched: allItems.length,
     items_new: 0,
-    errors: [...rssErrors, ...scrapeErrors],
-    items: scrapedItems,
+    errors: allErrors,
+    items: allItems,
   }
 }
