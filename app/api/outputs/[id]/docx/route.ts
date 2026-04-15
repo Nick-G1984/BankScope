@@ -1,66 +1,59 @@
-/**
- * GET /api/outputs/[id]/docx
- *
- * Generates and streams a .docx file for a saved premium output.
- * Requires Bearer auth — users can only download their own outputs.
- *
- * Response: application/vnd.openxmlformats-officedocument.wordprocessingml.document
- */
-
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth, AuthError } from '@/lib/auth/server'
 import { getOutputById } from '@/lib/db/outputs'
+import { requireAuth } from '@/lib/auth/server'
 import { generateDocx } from '@/lib/docx/generate-docx'
-import { OUTPUT_TYPE_LABELS } from '@/lib/types'
 
-export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-// DOCX generation can be compute-intensive for large outputs
-export const maxDuration = 30
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+type RouteContext = {
+  params: {
+    id: string
+  }
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+}
+
+export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
-    // Auth — user must own this output
-    const { userId } = await requireAuth(request)
+    const auth = await requireAuth(request)
+    const user = auth.user
 
-    // Fetch the saved output
-    const output = await getOutputById(params.id, userId)
+    const output = await getOutputById(params.id, user.id)
+
     if (!output) {
       return NextResponse.json({ error: 'Output not found' }, { status: 404 })
     }
 
-    // Generate the DOCX buffer
     const buffer = await generateDocx(output)
 
-    // Build a clean filename
-    const typeSlug = OUTPUT_TYPE_LABELS[output.output_type]
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-    const dateStr = new Date(output.created_at)
-      .toISOString()
-      .slice(0, 10)                       // YYYY-MM-DD
-    const filename = `bankscope-${typeSlug}-${dateStr}.docx`
+    const contentType =
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    const safeType = slugify(output.output_type || 'document')
+    const safeDate = new Date().toISOString().slice(0, 10)
+    const filename = `bankscope-${safeType}-${safeDate}.docx`
 
-    // Stream the buffer as an attachment
-    return new NextResponse(buffer, {
+    const arrayBuffer = Uint8Array.from(buffer).buffer
+
+    return new Response(arrayBuffer, {
       status: 200,
       headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': String(buffer.byteLength),
-        // Prevent caching of sensitive outputs
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Cache-Control': 'no-store',
       },
     })
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode })
-    }
-    const message = err instanceof Error ? err.message : 'Internal server error'
-    console.error('[api/outputs/docx] Error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+  } catch (error) {
+    console.error('[docx-download] Failed to generate DOCX:', error)
+
+    return NextResponse.json(
+      { error: 'Failed to generate DOCX' },
+      { status: 500 }
+    )
   }
 }

@@ -643,12 +643,12 @@ export function OutputViewer({ output }: OutputViewerProps) {
       )}
 
       {/* ── Confidence & source footer ────────────────────────────────── */}
-      {typeof (output.content as Record<string, unknown>).confidence_note === 'string' && (
+      {typeof ((output.content as unknown as Record<string, unknown>).confidence_note) === 'string' && (
         <div className="mt-10 pt-8 border-t border-gray-200">
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-5 py-4">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">🔍 Confidence & Source Note</p>
             <p className="text-[0.8125rem] text-gray-600 leading-6 italic">
-              {(output.content as Record<string, unknown>).confidence_note as string}
+              {((output.content as unknown as Record<string, unknown>).confidence_note) as string}
             </p>
           </div>
         </div>
@@ -656,3 +656,4 @@ export function OutputViewer({ output }: OutputViewerProps) {
     </div>
   )
 }
+
