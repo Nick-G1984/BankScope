@@ -163,51 +163,92 @@ export const OUTPUT_TYPE_DESCRIPTIONS: Record<OutputType, string> = {
   implementation_plan: 'Workstreams, milestones, RAID, and 30/60/90 day view',
 }
 
-// Content shapes for each output type
+// ── Content schemas for each premium output type ─────────────────────────────
+//
+// Design principles:
+//  1. All new fields are optional so old stored outputs render without crashing.
+//  2. `source_grounded_facts` = statements derivable from the source publication.
+//  3. `ai_recommendations` / action fields = AI-suggested, must be labelled as such.
+//  4. Every type carries `document_purpose` and `confidence_note`.
+
 export interface DeliveryBriefContent {
+  // v2 enriched fields
+  document_purpose?: string          // one sentence: what this doc is for
+  executive_summary?: string         // 2–3 sentence intro
+  source_grounded_facts?: string[]   // explicitly from the source publication
+  // core fields (original + v2)
   what_changed: string
   why_it_matters: string
   affected_areas: string[]
-  key_risks: string[]
-  recommended_owners: { role: string; responsibility: string }[]
+  key_risks: Array<
+    | string
+    | { risk: string; likelihood?: string; impact?: string }
+  >
+  recommended_owners: Array<{
+    role: string
+    responsibility: string
+    timeframe?: string
+  }>
   immediate_actions: string[]
   suggested_timeline: string
   confidence_note: string
 }
 
 export interface CompliancePackContent {
+  document_purpose?: string
   regulatory_obligations: string[]
   policies_impacted: string[]
   controls_to_review: string[]
   evidence_required: string[]
   suggested_attestations: string[]
   monitoring_actions: string[]
+  compliance_deadline?: string | null
   confidence_note: string
 }
 
 export interface GovernanceBriefContent {
-  decision_points: string[]
+  document_purpose?: string
+  executive_summary?: string
+  decision_points: Array<
+    | string
+    | { decision: string; forum?: string; urgency?: string }
+  >
   risk_areas: string[]
   dependencies: string[]
   required_governance_forums: string[]
   escalation_considerations: string[]
+  reporting_cadence?: string
   confidence_note: string
 }
 
 export interface BoardSummaryContent {
+  document_purpose?: string
   executive_summary: string
   strategic_relevance: string
   regulatory_exposure: string
+  management_response?: string       // what management is doing / plans to do
   key_decisions_required: string[]
   board_questions: string[]
   confidence_note: string
 }
 
 export interface ImplementationPlanContent {
-  workstreams: { name: string; description: string; owner_role: string }[]
-  milestones: { milestone: string; timeframe: string; phase: string }[]
+  document_purpose?: string
+  programme_overview?: string
+  workstreams: Array<{
+    name: string
+    description: string
+    owner_role: string
+    key_deliverables?: string[]
+  }>
+  milestones: Array<{
+    milestone: string
+    timeframe: string
+    phase: string
+    owner?: string
+  }>
   raid: {
-    risks: string[]
+    risks: Array<string | { description: string; mitigation?: string }>
     assumptions: string[]
     issues: string[]
     dependencies: string[]
@@ -217,6 +258,8 @@ export interface ImplementationPlanContent {
     days_31_60: string[]
     days_61_90: string[]
   }
+  governance_and_reporting?: string
+  success_criteria?: string[]
   confidence_note: string
 }
 

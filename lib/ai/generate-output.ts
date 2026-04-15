@@ -28,63 +28,93 @@ function getOpenAIClient(): OpenAI {
   return new OpenAI({ apiKey })
 }
 
-// ── Zod schemas for each output type ──────────────────────────────────────
+// ── Zod schemas (v2 — richer, schema-first) ────────────────────────────────
+
+const RiskSchema = z.object({
+  risk: z.string(),
+  likelihood: z.string().optional(),
+  impact: z.string().optional(),
+})
+
+const OwnerSchema = z.object({
+  role: z.string(),
+  responsibility: z.string(),
+  timeframe: z.string().optional(),
+})
 
 const DeliveryBriefSchema = z.object({
+  document_purpose: z.string(),
+  executive_summary: z.string(),
+  source_grounded_facts: z.array(z.string()),
   what_changed: z.string(),
   why_it_matters: z.string(),
   affected_areas: z.array(z.string()),
-  key_risks: z.array(z.string()),
-  recommended_owners: z.array(z.object({
-    role: z.string(),
-    responsibility: z.string(),
-  })),
+  key_risks: z.array(RiskSchema),
+  recommended_owners: z.array(OwnerSchema),
   immediate_actions: z.array(z.string()),
   suggested_timeline: z.string(),
   confidence_note: z.string(),
 })
 
 const CompliancePackSchema = z.object({
+  document_purpose: z.string(),
   regulatory_obligations: z.array(z.string()),
   policies_impacted: z.array(z.string()),
   controls_to_review: z.array(z.string()),
   evidence_required: z.array(z.string()),
   suggested_attestations: z.array(z.string()),
   monitoring_actions: z.array(z.string()),
+  compliance_deadline: z.string().nullable().optional(),
   confidence_note: z.string(),
 })
 
 const GovernanceBriefSchema = z.object({
-  decision_points: z.array(z.string()),
+  document_purpose: z.string(),
+  executive_summary: z.string(),
+  decision_points: z.array(z.object({
+    decision: z.string(),
+    forum: z.string().optional(),
+    urgency: z.string().optional(),
+  })),
   risk_areas: z.array(z.string()),
   dependencies: z.array(z.string()),
   required_governance_forums: z.array(z.string()),
   escalation_considerations: z.array(z.string()),
+  reporting_cadence: z.string().optional(),
   confidence_note: z.string(),
 })
 
 const BoardSummarySchema = z.object({
+  document_purpose: z.string(),
   executive_summary: z.string(),
   strategic_relevance: z.string(),
   regulatory_exposure: z.string(),
+  management_response: z.string().optional(),
   key_decisions_required: z.array(z.string()),
   board_questions: z.array(z.string()),
   confidence_note: z.string(),
 })
 
 const ImplementationPlanSchema = z.object({
+  document_purpose: z.string(),
+  programme_overview: z.string(),
   workstreams: z.array(z.object({
     name: z.string(),
     description: z.string(),
     owner_role: z.string(),
+    key_deliverables: z.array(z.string()).optional(),
   })),
   milestones: z.array(z.object({
     milestone: z.string(),
     timeframe: z.string(),
     phase: z.string(),
+    owner: z.string().optional(),
   })),
   raid: z.object({
-    risks: z.array(z.string()),
+    risks: z.array(z.object({
+      description: z.string(),
+      mitigation: z.string().optional(),
+    })),
     assumptions: z.array(z.string()),
     issues: z.array(z.string()),
     dependencies: z.array(z.string()),
@@ -94,6 +124,8 @@ const ImplementationPlanSchema = z.object({
     days_31_60: z.array(z.string()),
     days_61_90: z.array(z.string()),
   }),
+  governance_and_reporting: z.string().optional(),
+  success_criteria: z.array(z.string()).optional(),
   confidence_note: z.string(),
 })
 
@@ -135,10 +167,10 @@ export async function generateOutput(
 
   try {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',           // Use GPT-4o for higher quality deliverables
+      model: 'gpt-4o',
       response_format: { type: 'json_object' },
-      temperature: 0.2,
-      max_tokens: 2500,
+      temperature: 0.15,   // Lower temperature = tighter, more reliable schema adherence
+      max_tokens: 3500,    // Increased to handle richer schemas
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -151,7 +183,6 @@ export async function generateOutput(
     const parsed = JSON.parse(rawText)
     const content = validateOutput(outputType, parsed)
 
-    // Build a descriptive title for the output
     const typeLabel: Record<OutputType, string> = {
       delivery_brief: 'Delivery Brief',
       compliance_pack: 'Compliance Action Pack',
@@ -164,10 +195,9 @@ export async function generateOutput(
     return { content, title }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // Include raw text in error for debugging
     throw new Error(
       `Output generation failed for type '${outputType}': ${message}` +
-      (rawText ? `\nRaw response: ${rawText.slice(0, 300)}` : '')
+      (rawText ? `\nRaw response: ${rawText.slice(0, 500)}` : '')
     )
   }
 }
