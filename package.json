@@ -13,6 +13,7 @@
     "reprocess": "tsx scripts/reprocess-summaries.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.48.0",
     "@supabase/supabase-js": "^2.43.4",
     "cheerio": "^1.0.0",
     "clsx": "^2.1.1",
