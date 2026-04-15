@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getIntelligenceItems } from '@/lib/db/intelligence'
-import type { IntelligenceFilters, Urgency, ContentType } from '@/lib/types'
+import type { IntelligenceFilters, Urgency, ContentType, RegulatoryTheme } from '@/lib/types'
 
 export const runtime = 'nodejs'
 export const revalidate = 60 // Cache for 60 seconds
@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       source_name: searchParams.get('source_name') || undefined,
       urgency: (searchParams.get('urgency') as Urgency) || undefined,
       content_type: (searchParams.get('content_type') as ContentType) || undefined,
+      regulatory_theme: (searchParams.get('regulatory_theme') as RegulatoryTheme) || undefined,
       category_tag: searchParams.get('category_tag') || undefined,
       audience: searchParams.get('audience') || undefined,
       firm_types: firm_types.length > 0 ? firm_types : undefined,

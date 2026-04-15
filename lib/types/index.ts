@@ -123,9 +123,10 @@ export interface IntelligenceFilters {
   source_name?: string
   urgency?: Urgency
   content_type?: ContentType
+  regulatory_theme?: RegulatoryTheme
   category_tag?: string
   audience?: string
-  // Multi-select filters (array overlap semantics — any match)
+  // Multi-select filters (array overlap semantics — any match, available via API)
   firm_types?: string[]      // matches against affected_audience column
   product_areas?: string[]   // matches against category_tags column
   functions?: string[]       // matches against affected_functions column
@@ -133,6 +134,138 @@ export interface IntelligenceFilters {
   date_to?: string
   page?: number
   limit?: number
+}
+
+// ============================================================
+// OUTPUT GENERATION TYPES (Phase 2)
+// ============================================================
+
+export type OutputType =
+  | 'delivery_brief'
+  | 'compliance_pack'
+  | 'governance_brief'
+  | 'board_summary'
+  | 'implementation_plan'
+
+export const OUTPUT_TYPE_LABELS: Record<OutputType, string> = {
+  delivery_brief: 'Delivery Brief',
+  compliance_pack: 'Compliance Action Pack',
+  governance_brief: 'Governance Brief',
+  board_summary: 'Board Summary',
+  implementation_plan: 'Implementation Plan',
+}
+
+export const OUTPUT_TYPE_DESCRIPTIONS: Record<OutputType, string> = {
+  delivery_brief: 'What changed, key risks, owners, and immediate actions',
+  compliance_pack: 'Obligations, controls, evidence, and attestations',
+  governance_brief: 'Decision points, risk areas, and governance forums',
+  board_summary: 'Executive summary, strategic relevance, and board questions',
+  implementation_plan: 'Workstreams, milestones, RAID, and 30/60/90 day view',
+}
+
+// Content shapes for each output type
+export interface DeliveryBriefContent {
+  what_changed: string
+  why_it_matters: string
+  affected_areas: string[]
+  key_risks: string[]
+  recommended_owners: { role: string; responsibility: string }[]
+  immediate_actions: string[]
+  suggested_timeline: string
+  confidence_note: string
+}
+
+export interface CompliancePackContent {
+  regulatory_obligations: string[]
+  policies_impacted: string[]
+  controls_to_review: string[]
+  evidence_required: string[]
+  suggested_attestations: string[]
+  monitoring_actions: string[]
+  confidence_note: string
+}
+
+export interface GovernanceBriefContent {
+  decision_points: string[]
+  risk_areas: string[]
+  dependencies: string[]
+  required_governance_forums: string[]
+  escalation_considerations: string[]
+  confidence_note: string
+}
+
+export interface BoardSummaryContent {
+  executive_summary: string
+  strategic_relevance: string
+  regulatory_exposure: string
+  key_decisions_required: string[]
+  board_questions: string[]
+  confidence_note: string
+}
+
+export interface ImplementationPlanContent {
+  workstreams: { name: string; description: string; owner_role: string }[]
+  milestones: { milestone: string; timeframe: string; phase: string }[]
+  raid: {
+    risks: string[]
+    assumptions: string[]
+    issues: string[]
+    dependencies: string[]
+  }
+  delivery_phases: {
+    days_0_30: string[]
+    days_31_60: string[]
+    days_61_90: string[]
+  }
+  confidence_note: string
+}
+
+export type OutputContent =
+  | DeliveryBriefContent
+  | CompliancePackContent
+  | GovernanceBriefContent
+  | BoardSummaryContent
+  | ImplementationPlanContent
+
+export interface GeneratedOutput {
+  id: string
+  user_id: string
+  intelligence_item_id: string
+  output_type: OutputType
+  title: string
+  content: OutputContent
+  source_item_title: string | null
+  source_item_url: string | null
+  source_name: string | null
+  credits_used: number
+  created_at: string
+}
+
+// ============================================================
+// AUTH / USER TYPES
+// ============================================================
+
+export type PlanTier = 'free' | 'pro' | 'enterprise'
+
+export interface UserProfile {
+  id: string
+  email: string | null
+  full_name: string | null
+  organisation: string | null
+  credit_balance: number
+  plan: PlanTier
+  created_at: string
+  updated_at: string
+}
+
+export interface CreditTransaction {
+  id: string
+  user_id: string
+  amount: number
+  reason: 'signup_bonus' | 'output_generated' | 'purchase' | 'admin_grant' | 'refund'
+  output_id: string | null
+  note: string | null
+  created_at: string
 }
 
 // Paginated response

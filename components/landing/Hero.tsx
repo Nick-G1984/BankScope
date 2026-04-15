@@ -1,5 +1,11 @@
 import Link from 'next/link'
 
+const OUTCOMES = [
+  'Turn regulatory updates into board-ready packs in minutes',
+  'Convert FCA publications into delivery briefs your team can act on',
+  'Save hours of manual regulatory interpretation',
+]
+
 export function Hero() {
   return (
     <section className="relative bg-gradient-to-br from-brand-950 via-brand-900 to-brand-800 text-white overflow-hidden">
@@ -19,35 +25,44 @@ export function Hero() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
             </span>
-            Daily automated updates from FCA, PRA, Bank of England & more
+            Daily updates from FCA, PRA, Bank of England and more
           </div>
 
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6 leading-tight">
-            UK Financial Services<br />
-            <span className="text-brand-300">Regulatory Intelligence</span><br />
-            in Plain English
+            Regulatory change.<br />
+            <span className="text-brand-300">Turned into action.</span>
           </h1>
 
-          <p className="text-xl text-blue-100 mb-10 leading-relaxed max-w-2xl">
-            BankScope Intelligence monitors the FCA, PRA, Bank of England, ICO, and HM Treasury,
-            then uses AI to turn regulatory signals into clear, actionable summaries — tagged by
-            urgency, audience, and topic. Built for compliance, risk, and ops teams.
+          <p className="text-xl text-blue-100 mb-6 leading-relaxed max-w-2xl">
+            BankScope monitors UK financial services regulators, then generates professional
+            deliverables your compliance, risk, PMO, and governance teams can use immediately.
           </p>
+
+          <ul className="space-y-2 mb-10">
+            {OUTCOMES.map((o) => (
+              <li key={o} className="flex items-start gap-2.5 text-blue-100 text-sm">
+                <span className="flex-shrink-0 mt-0.5 text-green-400">✓</span>
+                {o}
+              </li>
+            ))}
+          </ul>
 
           <div className="flex flex-col sm:flex-row gap-4">
             <Link
-              href="/dashboard"
+              href="/auth/sign-up"
               className="inline-flex items-center justify-center rounded-xl bg-white text-brand-900 px-8 py-4 text-base font-semibold shadow-lg hover:bg-blue-50 transition-colors"
             >
-              Open Intelligence Dashboard →
+              Get started free →
             </Link>
-            <a
-              href="#features"
+            <Link
+              href="/dashboard"
               className="inline-flex items-center justify-center rounded-xl border border-white/30 text-white px-8 py-4 text-base font-semibold hover:bg-white/10 transition-colors"
             >
-              See how it works
-            </a>
+              Browse intelligence
+            </Link>
           </div>
+
+          <p className="text-blue-300 text-xs mt-4">Free account · 3 credits included · No card required</p>
         </div>
       </div>
     </section>

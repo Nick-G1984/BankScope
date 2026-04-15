@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { Badge, UrgencyDot } from '@/components/ui/Badge'
+import { ActionButtons } from '@/components/dashboard/ActionButtons'
 import type { IntelligenceItem } from '@/lib/types'
 
 function toLabel(s: string) {
@@ -129,8 +130,11 @@ export function IntelligenceCard({ item }: Props) {
         </div>
       )}
 
+      {/* ── Action buttons (compact) ── */}
+      <ActionButtons itemId={item.id} itemTitle={item.title} variant="compact" />
+
       {/* ── Footer: date, source link, view ── */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100 mt-3">
         <div className="flex items-center gap-3">
           {publishDate && (
             <span className="text-xs text-gray-400">{publishDate}</span>

@@ -1,6 +1,11 @@
+'use client'
+
 import Link from 'next/link'
+import { useAuth } from '@/components/auth/AuthProvider'
 
 export function Header() {
+  const { user, profile, signOut } = useAuth()
+
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -25,18 +30,45 @@ export function Header() {
             >
               Dashboard
             </Link>
-            <Link
-              href="/admin"
-              className="px-3 py-2 text-sm font-medium text-gray-600 rounded-lg hover:text-gray-900 hover:bg-gray-100 transition-colors"
-            >
-              Admin
-            </Link>
+            {user && (
+              <Link
+                href="/workspace"
+                className="px-3 py-2 text-sm font-medium text-gray-600 rounded-lg hover:text-gray-900 hover:bg-gray-100 transition-colors"
+              >
+                My Workspace
+              </Link>
+            )}
           </nav>
 
+          {/* Right side */}
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="btn-primary text-sm">
-              Open Dashboard →
-            </Link>
+            {user ? (
+              <>
+                {profile && (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-3 py-1.5">
+                    <span className="text-brand-600 font-bold">{profile.credit_balance}</span> credit{profile.credit_balance !== 1 ? 's' : ''}
+                  </span>
+                )}
+                <Link href="/workspace" className="btn-primary text-sm hidden sm:inline-flex">
+                  My Workspace
+                </Link>
+                <button
+                  onClick={signOut}
+                  className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/auth/sign-in" className="btn-secondary text-sm hidden sm:inline-flex">
+                  Sign in
+                </Link>
+                <Link href="/auth/sign-up" className="btn-primary text-sm">
+                  Get started free
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

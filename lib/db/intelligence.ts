@@ -20,6 +20,7 @@ export async function getIntelligenceItems(
     source_name,
     urgency,
     content_type,
+    regulatory_theme,
     category_tag,
     audience,
     firm_types,
@@ -52,6 +53,7 @@ export async function getIntelligenceItems(
   if (source_name) query = query.eq('source_name', source_name)
   if (urgency) query = query.eq('urgency', urgency)
   if (content_type) query = query.eq('content_type', content_type)
+  if (regulatory_theme) query = query.eq('regulatory_theme', regulatory_theme)
   if (category_tag) query = query.contains('category_tags', [category_tag])
   if (audience) query = query.contains('affected_audience', [audience])
   // Multi-value filters — any item whose array column overlaps with the selected values

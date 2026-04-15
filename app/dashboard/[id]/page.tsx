@@ -5,6 +5,7 @@ import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { Badge, UrgencyDot } from '@/components/ui/Badge'
 import { getIntelligenceItemById } from '@/lib/db/intelligence'
+import { ActionButtons } from '@/components/dashboard/ActionButtons'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -140,6 +141,11 @@ export default async function ItemDetailPage({ params }: Props) {
               <p className="text-brand-900 text-sm leading-relaxed">{item.suggested_next_step}</p>
             </div>
           )}
+
+          {/* ── Generate a deliverable ── */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6">
+            <ActionButtons itemId={item.id} itemTitle={item.title} variant="full" />
+          </div>
 
           {/* ── AI Summary ── */}
           {item.ai_summary && (
