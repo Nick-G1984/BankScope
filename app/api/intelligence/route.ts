@@ -9,6 +9,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
 
+    // Multi-value params arrive as repeated keys: ?firm_type=banks&firm_type=building+societies
+    const firm_types = searchParams.getAll('firm_type')
+    const product_areas = searchParams.getAll('product_area')
+    const functions = searchParams.getAll('function')
+
     const filters: IntelligenceFilters = {
       search: searchParams.get('search') || undefined,
       source_name: searchParams.get('source_name') || undefined,
@@ -16,6 +21,9 @@ export async function GET(request: NextRequest) {
       content_type: (searchParams.get('content_type') as ContentType) || undefined,
       category_tag: searchParams.get('category_tag') || undefined,
       audience: searchParams.get('audience') || undefined,
+      firm_types: firm_types.length > 0 ? firm_types : undefined,
+      product_areas: product_areas.length > 0 ? product_areas : undefined,
+      functions: functions.length > 0 ? functions : undefined,
       date_from: searchParams.get('date_from') || undefined,
       date_to: searchParams.get('date_to') || undefined,
       page: searchParams.has('page') ? parseInt(searchParams.get('page')!, 10) : 1,

@@ -125,6 +125,10 @@ export interface IntelligenceFilters {
   content_type?: ContentType
   category_tag?: string
   audience?: string
+  // Multi-select filters (array overlap semantics — any match)
+  firm_types?: string[]      // matches against affected_audience column
+  product_areas?: string[]   // matches against category_tags column
+  functions?: string[]       // matches against affected_functions column
   date_from?: string
   date_to?: string
   page?: number

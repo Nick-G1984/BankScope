@@ -22,6 +22,9 @@ export async function getIntelligenceItems(
     content_type,
     category_tag,
     audience,
+    firm_types,
+    product_areas,
+    functions,
     date_from,
     date_to,
     page = 1,
@@ -51,6 +54,10 @@ export async function getIntelligenceItems(
   if (content_type) query = query.eq('content_type', content_type)
   if (category_tag) query = query.contains('category_tags', [category_tag])
   if (audience) query = query.contains('affected_audience', [audience])
+  // Multi-value filters — any item whose array column overlaps with the selected values
+  if (firm_types && firm_types.length > 0) query = query.overlaps('affected_audience', firm_types)
+  if (product_areas && product_areas.length > 0) query = query.overlaps('category_tags', product_areas)
+  if (functions && functions.length > 0) query = query.overlaps('affected_functions', functions)
   if (date_from) query = query.gte('publish_date', date_from)
   if (date_to) query = query.lte('publish_date', date_to)
 
@@ -243,8 +250,21 @@ export async function getDashboardStats(): Promise<{
 }> {
   const db = createAdminClient()
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Calculate midnight in Europe/London, expressed as UTC.
+  // Works correctly for both GMT (UTC+0, winter) and BST (UTC+1, summer).
+  const now = new Date()
+  // Obtain the current moment as a "local" Date object in London time and in UTC,
+  // using the trick of parsing toLocaleString output (server timezone agnostic).
+  const londonNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/London' }))
+  const utcNow    = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  // How many ms London is ahead of UTC (0 in winter, 3600000 in summer BST)
+  const londonOffsetMs = londonNow.getTime() - utcNow.getTime()
+  // Midnight for London's current calendar date, first expressed as UTC midnight...
+  const londonDateUTCMidnight = Date.UTC(
+    londonNow.getFullYear(), londonNow.getMonth(), londonNow.getDate()
+  )
+  // ...then shifted back by London's offset to get the actual UTC timestamp for 00:00 London
+  const londonMidnightUTC = new Date(londonDateUTCMidnight - londonOffsetMs)
 
   const [total, unprocessed, todayItems, sources] = await Promise.all([
     db.from('intelligence_items').select('*', { count: 'exact', head: true }),
@@ -255,7 +275,7 @@ export async function getDashboardStats(): Promise<{
     db
       .from('intelligence_items')
       .select('*', { count: 'exact', head: true })
-      .gte('created_at', today.toISOString()),
+      .gte('created_at', londonMidnightUTC.toISOString()),
     db
       .from('data_sources')
       .select('*', { count: 'exact', head: true })
