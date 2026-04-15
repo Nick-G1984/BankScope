@@ -3,7 +3,7 @@ import { getIntelligenceItems } from '@/lib/db/intelligence'
 import type { IntelligenceFilters, Urgency, ContentType, RegulatoryTheme } from '@/lib/types'
 
 export const runtime = 'nodejs'
-export const revalidate = 60 // Cache for 60 seconds
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
