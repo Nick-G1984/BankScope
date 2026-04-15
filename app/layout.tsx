@@ -1,5 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { AuthProvider } from '@/components/auth/AuthProvider'
+import { PostHogProvider } from '@/components/analytics/PostHogProvider'
+import { PostHogPageView } from '@/components/analytics/PostHogPageView'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -28,7 +31,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <PostHogProvider>
+          {/* PostHogPageView uses useSearchParams — must be inside Suspense */}
+          <Suspense fallback={null}>
+            <PostHogPageView />
+          </Suspense>
+          <AuthProvider>{children}</AuthProvider>
+        </PostHogProvider>
       </body>
     </html>
   )
