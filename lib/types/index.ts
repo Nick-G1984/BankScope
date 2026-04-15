@@ -54,7 +54,10 @@ export interface IntelligenceItem {
   action_required: ActionRequired | null
   regulatory_theme: RegulatoryTheme | null
   deadline: string | null            // ISO date (YYYY-MM-DD) if a compliance deadline is mentioned
-  priority_rationale: string | null  // 1-2 sentence explanation of the priority score
+  priority_rationale: string | null  // 2-sentence explanation of the priority score
+  // --- Added in migration-002 ---
+  why_it_matters: string | null      // 1-2 sentence practical implication, distinct from summary
+  affected_functions: string[]       // internal teams: compliance, risk, operations, change-management, etc.
   // ------------------------------
   confidence_status: ConfidenceStatus
   is_processed: boolean
@@ -98,10 +101,12 @@ export interface IngestionRun {
   source_results: SourceResult[] | null
 }
 
-// AI summary output — what OpenAI returns (extended in migration-001)
+// AI summary output — what OpenAI returns
 export interface AISummaryOutput {
   summary: string
-  affected_audience: string[]
+  why_it_matters: string
+  affected_audience: string[]        // maps to affected_firm_types in prompt
+  affected_functions: string[]
   urgency: Urgency
   suggested_next_step: string
   category_tags: string[]

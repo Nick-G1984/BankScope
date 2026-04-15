@@ -70,6 +70,8 @@ async function runSource(name: string, fn: SourceFn): Promise<SourceResult> {
           regulatory_theme: null,
           deadline: null,
           priority_rationale: null,
+          why_it_matters: null,
+          affected_functions: [],
           confidence_status: 'pending' as const,
           is_processed: false,
         }))

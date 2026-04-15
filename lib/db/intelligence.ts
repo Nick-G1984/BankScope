@@ -93,6 +93,46 @@ export async function getUnprocessedItems(limit = 50): Promise<IntelligenceItem[
   return (data ?? []) as IntelligenceItem[]
 }
 
+/**
+ * Fetch items for reprocessing after a prompt or schema upgrade.
+ *
+ * mode='missing'  → only items that were never successfully summarised
+ *                   (ai_summary IS NULL or confidence_status = 'pending')
+ * mode='all'      → every item, regardless of summary state
+ *                   Use after a major prompt change with a sensible maxItems cap.
+ *
+ * Ordered oldest-first so recently ingested items aren't starved when
+ * re-running with a small limit.
+ */
+export async function getItemsForReprocessing(options: {
+  mode: 'missing' | 'all'
+  maxItems?: number
+  source?: string
+}): Promise<IntelligenceItem[]> {
+  const { mode, maxItems = 200, source } = options
+  const db = createAdminClient()
+
+  let query = db
+    .from('intelligence_items')
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(maxItems)
+
+  if (mode === 'missing') {
+    // Items with no successful AI summary yet
+    query = query.or('ai_summary.is.null,confidence_status.eq.pending')
+  }
+  // mode='all' — no additional filter; all items are eligible
+
+  if (source) {
+    query = query.eq('source_name', source)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to fetch items for reprocessing: ${error.message}`)
+  return (data ?? []) as IntelligenceItem[]
+}
+
 // ============================================================
 // Intelligence Item Mutations
 // ============================================================
@@ -135,11 +175,14 @@ export async function updateIntelligenceItemSummary(
     priority_score: number
     confidence_status: string
     is_processed: boolean
-    // Extended fields — added in migration-001 (optional for backward compat)
+    // Fields added in migration-001
     action_required?: string | null
     regulatory_theme?: string | null
     deadline?: string | null
     priority_rationale?: string | null
+    // Fields added in migration-002
+    why_it_matters?: string | null
+    affected_functions?: string[]
   }
 ): Promise<void> {
   const db = createAdminClient()
