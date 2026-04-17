@@ -6,6 +6,7 @@ import { Footer } from '@/components/layout/Footer'
 import { Badge, UrgencyDot } from '@/components/ui/Badge'
 import { getIntelligenceItemById } from '@/lib/db/intelligence'
 import { ActionButtons } from '@/components/dashboard/ActionButtons'
+import { RegulatoryFileSection } from '@/components/dashboard/RegulatoryFileSection'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -249,6 +250,18 @@ export default async function ItemDetailPage({ params }: Props) {
             </section>
           )}
         </article>
+
+        {/* ── Regulatory File Dossier ── */}
+        <div className="mt-6">
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="text-lg font-bold text-gray-900">Regulatory File</h2>
+            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-brand-100 text-brand-700 border border-brand-200">
+              Deep analysis
+            </span>
+          </div>
+          <RegulatoryFileSection itemId={item.id} />
+        </div>
+
       </main>
       <Footer />
     </div>
