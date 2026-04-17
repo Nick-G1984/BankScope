@@ -167,6 +167,37 @@ export async function markRegulatoryFileFailed(
 }
 
 /**
+ * Update commentary fields after Phase 2 enrichment completes.
+ * Only touches commentary-related columns — leaves Phase 1 content intact.
+ */
+export async function updateRegulatoryFileCommentary(
+  id: string,
+  commentary: {
+    external_commentary: RegulatoryFile['external_commentary']
+    commentary_status: RegulatoryFile['commentary_status']
+    commentary_search_queries: string[]
+    commentary_enriched_at: string
+    commentary_rejected_candidates: unknown[]
+  }
+): Promise<void> {
+  const db = createAdminClient()
+  const { error } = await db
+    .from('regulatory_files')
+    .update({
+      external_commentary: commentary.external_commentary,
+      commentary_status: commentary.commentary_status,
+      commentary_search_queries: commentary.commentary_search_queries,
+      commentary_enriched_at: commentary.commentary_enriched_at,
+      commentary_rejected_candidates: commentary.commentary_rejected_candidates,
+    })
+    .eq('id', id)
+
+  if (error) {
+    throw new Error(`Failed to update regulatory file commentary: ${error.message}`)
+  }
+}
+
+/**
  * Delete a regulatory file (e.g. to allow re-enrichment from scratch).
  */
 export async function deleteRegulatoryFile(

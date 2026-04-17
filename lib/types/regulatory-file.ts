@@ -75,26 +75,59 @@ export interface AmbiguityArea {
   suggested_resolution: string  // how a firm could resolve this
 }
 
-/** External commentary from a reputable source */
+/**
+ * External commentary from a reputable source.
+ *
+ * CRITICAL INVARIANTS for production entries:
+ *   attribution must be 'fetched'   — URL was actually retrieved
+ *   verified must be true           — content was extracted and validated
+ *   source_url must not be null     — every entry must have a real URL
+ *   retrieved_excerpt must be set   — verbatim passage from the source page
+ *
+ * Entries with attribution 'ai_knowledge' or 'ai_inferred' and verified=false
+ * MUST NOT appear in the dossier UI. The commentary enrichment pipeline only
+ * ever produces attribution='fetched' + verified=true entries.
+ */
 export interface ExternalCommentary {
-  source_name: string           // e.g. "Deloitte", "KPMG", "Allen & Overy"
-  source_url: string | null     // URL if available / fetched
+  source_name: string           // e.g. "Deloitte", "Allen & Overy"
+  /** Canonical domain of the source — e.g. "deloitte.com" */
+  source_domain?: string
+  /** Always populated for verified commentary. Never null for verified=true entries. */
+  source_url: string | null
   publication_title: string
   publication_date: string | null
-  summary: string               // what they say about this topic
-  reinforces_source: boolean    // does it align with / clarify the regulator?
-  introduces_caution: boolean   // does it add nuance, risk, or implementation complexity?
+  /**
+   * Verbatim or near-verbatim passage extracted from the source page.
+   * NOT AI-generated prose. Only present when attribution='fetched'.
+   */
+  retrieved_excerpt?: string
+  /** 2-3 sentence factual summary of what the source says */
+  summary: string
+  /** Does it align with / support the regulator's position? */
+  reinforces_source: boolean
+  /** Does it highlight implementation risks, nuance, or challenges? */
+  introduces_caution: boolean
   key_points: string[]
   source_category:
-    | 'big4'              // Deloitte, KPMG, PwC, EY
-    | 'law_firm'          // Allen & Overy, Clifford Chance, Linklaters, etc.
-    | 'regulator_followup'// Regulator FAQ, Dear CEO, speech, follow-up guidance
-    | 'industry_body'     // TheCityUK, UK Finance, BSA, ABI, etc.
-    | 'news_analysis'     // FT, Reuters, City A.M. (labelled clearly)
+    | 'big4'               // Deloitte, KPMG, PwC, EY
+    | 'law_firm'           // Allen & Overy, Clifford Chance, Linklaters, etc.
+    | 'regulator_followup' // Regulator follow-up, FAQ, speech, Dear CEO
+    | 'industry_body'      // TheCityUK, UK Finance, BSA, ABI
+    | 'news_analysis'      // Clearly labelled press/analysis if added later
     | 'other'
+  /**
+   * Only 'fetched' is acceptable for entries shown in the dossier UI.
+   * 'ai_knowledge' and 'ai_inferred' are never populated by the current pipeline
+   * and must not appear in stored commentary.
+   */
   attribution: CommentaryAttribution
-  verified: boolean             // was the URL actually fetched and content checked?
+  /** true only when the URL was retrieved and content was extracted and validated */
+  verified: boolean
   confidence: 'high' | 'medium' | 'low'
+  /** Scoring engine output (0.0–1.0) — used for display and debugging */
+  commentary_confidence_score?: number
+  /** Why this candidate was accepted — useful for tuning and debugging */
+  retrieval_reasoning?: string
 }
 
 /** Consensus and uncertainty synthesis */
@@ -198,11 +231,21 @@ export interface RegulatoryFile {
   // 10. BankScope operational view
   bankscope_view: BankScopeView
 
-  // Enrichment metadata
+  // Phase 1 enrichment metadata
   enrichment_status: EnrichmentStatus
   enrichment_model: string | null        // e.g. 'gpt-4o'
   enriched_at: string | null
   enrichment_error: string | null
+
+  // Phase 2 commentary metadata (added by migration-005)
+  /** When Phase 2 commentary enrichment last ran */
+  commentary_enriched_at?: string | null
+  /**
+   * Candidates evaluated but rejected during commentary enrichment.
+   * Not shown in UI — used for debugging and scoring tuning.
+   */
+  commentary_rejected_candidates?: unknown[]
+
   created_at: string
   updated_at: string
 }

@@ -4,17 +4,24 @@
  * RegulatoryFileSection
  *
  * Client component that wraps the full regulatory file workflow for an
- * intelligence item detail page:
+ * intelligence item detail page. Manages two independent async phases:
  *
- *  1. On mount, GETs /api/regulatory-files/[itemId] to check if a file exists.
- *  2. If no file → renders the <RegulatoryFileEmpty> "Generate" prompt.
- *  3. If enrichment_status === 'in_progress' → shows a spinner and polls
- *     every 5 s until the status changes.
- *  4. If completed → renders the full <RegulatoryFileView> dossier.
- *  5. If failed → renders the <RegulatoryFileFailed> retry UI.
+ * Phase 1 — Regulatory file generation:
+ *   1. On mount, GETs /api/regulatory-files/[itemId] to check if a file exists.
+ *   2. If no file → renders the <RegulatoryFileEmpty> "Generate" prompt.
+ *   3. If enrichment_status === 'in_progress' → shows a spinner and polls
+ *      every 5 s until the status changes.
+ *   4. If completed → renders the full <RegulatoryFileView> dossier.
+ *   5. If failed → renders the <RegulatoryFileFailed> retry UI.
  *
- * The component fetches its own auth token via sessionStorage (same pattern
- * used by the workspace page) — it does NOT receive auth as a prop.
+ * Phase 2 — Verified commentary enrichment:
+ *   Triggered by the user clicking "Find trusted commentary" inside Section 9
+ *   of the dossier. POSTs to /api/regulatory-files/[itemId]/commentary and
+ *   re-fetches the file on success. Commentary state is tracked independently
+ *   so it never interrupts the Phase 1 view.
+ *
+ * Auth: uses getAccessToken() from lib/auth/client — the Supabase JS client's
+ * getSession() — which is the canonical, non-heuristic token source.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -25,6 +32,9 @@ import {
   RegulatoryFileFailed,
 } from './RegulatoryFileView'
 import type { RegulatoryFile } from '@/lib/types/regulatory-file'
+import { getAccessToken } from '@/lib/auth/client'
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 type SectionState =
   | { status: 'loading' }
@@ -34,57 +44,44 @@ type SectionState =
   | { status: 'failed'; file: RegulatoryFile; error: string }
   | { status: 'error'; message: string }
 
-/** Reads the session token from localStorage (set by AuthProvider) */
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    // Supabase stores the session under 'supabase.auth.token' or similar keys;
-    // we read it through the same key the AuthProvider sets it.
-    const raw = localStorage.getItem('sb-access-token')
-    if (raw) return raw
-    // Fallback: scan localStorage for a Supabase session key
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i) ?? ''
-      if (key.includes('supabase') && key.includes('token')) {
-        const item = localStorage.getItem(key)
-        if (item) {
-          try {
-            const parsed = JSON.parse(item)
-            return parsed?.access_token ?? parsed?.currentSession?.access_token ?? null
-          } catch {
-            // not JSON
-          }
-        }
-      }
-    }
-  } catch {
-    // localStorage may be unavailable in some contexts
-  }
-  return null
-}
+// ── Auth-aware fetch helper ───────────────────────────────────────────────────
 
-async function apiFetch(path: string, options?: RequestInit) {
-  const token = getToken()
+/**
+ * Wraps fetch() with a Bearer token obtained from the Supabase JS client.
+ * Uses getAccessToken() which calls supabase.auth.getSession() under the hood —
+ * the real, reliable token source rather than a localStorage key scan.
+ */
+async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const token = await getAccessToken()
   return fetch(path, {
     ...options,
     headers: {
       ...(options?.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   })
 }
 
+// ── Component ────────────────────────────────────────────────────────────────
+
 export function RegulatoryFileSection({ itemId }: { itemId: string }) {
+  // Phase 1 state
   const [state, setState] = useState<SectionState>({ status: 'loading' })
   const [generating, setGenerating] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // ── Fetch existing file ──
+  // Phase 2 commentary state — tracked independently from Phase 1
+  const [commentarySearching, setCommentarySearching] = useState(false)
+  const [commentaryError, setCommentaryError] = useState<string | null>(null)
+
+  // ── Fetch existing file (Phase 1) ──────────────────────────────────────────
+
   const fetchFile = useCallback(async () => {
     try {
       const res = await apiFetch(`/api/regulatory-files/${itemId}`)
+
       if (res.status === 404) {
         setState({ status: 'not_found' })
         return
@@ -94,17 +91,24 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
         setState({ status: 'error', message: body.error ?? 'Failed to fetch regulatory file' })
         return
       }
+
       const data = await res.json()
       const file: RegulatoryFile = data.regulatory_file
+
       if (file.enrichment_status === 'in_progress') {
         setState({ status: 'in_progress' })
       } else if (file.enrichment_status === 'completed') {
         setState({ status: 'completed', file })
         if (pollRef.current) clearInterval(pollRef.current)
       } else if (file.enrichment_status === 'failed') {
-        setState({ status: 'failed', file, error: file.enrichment_error ?? 'Unknown enrichment error' })
+        setState({
+          status: 'failed',
+          file,
+          error: file.enrichment_error ?? 'Unknown enrichment error',
+        })
         if (pollRef.current) clearInterval(pollRef.current)
       } else {
+        // 'pending' — treat as in_progress so we poll
         setState({ status: 'in_progress' })
       }
     } catch (err) {
@@ -112,7 +116,8 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     }
   }, [itemId])
 
-  // ── Trigger enrichment ──
+  // ── Trigger Phase 1 enrichment ─────────────────────────────────────────────
+
   const triggerEnrichment = useCallback(async (force = false) => {
     try {
       const res = await apiFetch(`/api/regulatory-files/${itemId}`, {
@@ -123,11 +128,8 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
 
       if (!res.ok) {
         const errMsg = data.error ?? 'Enrichment request failed'
-        // If a previous file exists (failed state), show the error inline
         setState((prev) => {
-          if (prev.status === 'failed') {
-            return { ...prev, error: errMsg }
-          }
+          if (prev.status === 'failed') return { ...prev, error: errMsg }
           return { status: 'error', message: errMsg }
         })
         return
@@ -137,7 +139,7 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
       if (file.enrichment_status === 'completed') {
         setState({ status: 'completed', file })
       } else {
-        // in_progress — start polling
+        // in_progress — polling will pick it up
         setState({ status: 'in_progress' })
       }
     } catch (err) {
@@ -145,25 +147,80 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     }
   }, [itemId])
 
-  // ── Initial fetch on mount ──
+  // ── Trigger Phase 2 commentary enrichment ─────────────────────────────────
+
+  const handleFindCommentary = useCallback(async () => {
+    setCommentarySearching(true)
+    setCommentaryError(null)
+
+    try {
+      const res = await apiFetch(`/api/regulatory-files/${itemId}/commentary`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        if (res.status === 422) {
+          // Not eligible — communicate clearly but don't treat as a hard failure
+          setCommentaryError(
+            data.error ??
+              'This item does not currently meet the criteria for commentary search ' +
+              '(urgency, priority, or content type). You can still use the research queries below.'
+          )
+        } else if (res.status === 503) {
+          setCommentaryError(
+            'Commentary search is not configured on this server. ' +
+              'Contact your administrator to set up a TAVILY_API_KEY or BING_SEARCH_API_KEY.'
+          )
+        } else if (res.status === 400) {
+          setCommentaryError(
+            data.error ?? 'Phase 1 regulatory file must be complete before searching for commentary.'
+          )
+        } else {
+          setCommentaryError(data.error ?? 'Commentary search failed. Please try again.')
+        }
+        return
+      }
+
+      // Success — re-fetch the full file to pick up updated commentary fields.
+      // The commentary_status and external_commentary are now stored in the DB.
+      await fetchFile()
+    } catch (err) {
+      setCommentaryError(err instanceof Error ? err.message : 'Network error. Please try again.')
+    } finally {
+      setCommentarySearching(false)
+    }
+  }, [itemId, fetchFile])
+
+  // ── Initial fetch on mount ─────────────────────────────────────────────────
+
   useEffect(() => {
     fetchFile()
   }, [fetchFile])
 
-  // ── Poll when in_progress ──
+  // ── Poll while Phase 1 is in_progress ─────────────────────────────────────
+
   useEffect(() => {
     if (state.status === 'in_progress') {
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(fetchFile, 5000)
     } else {
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
     }
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
     }
   }, [state.status, fetchFile])
 
-  // ── Generate handler ──
+  // ── Phase 1 generate / retry handlers ─────────────────────────────────────
+
   const handleGenerate = useCallback(async () => {
     setGenerating(true)
     setState({ status: 'in_progress' })
@@ -171,7 +228,6 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     setGenerating(false)
   }, [triggerEnrichment])
 
-  // ── Retry handler ──
   const handleRetry = useCallback(async () => {
     setRetrying(true)
     setState({ status: 'in_progress' })
@@ -179,7 +235,7 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     setRetrying(false)
   }, [triggerEnrichment])
 
-  // ── Render ──
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   if (state.status === 'loading') {
     return (
@@ -228,7 +284,8 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     return (
       <div className="py-4 border border-red-200 rounded-xl bg-red-50 p-4">
         <p className="text-sm text-red-700">
-          <span className="font-semibold">Error: </span>{state.message}
+          <span className="font-semibold">Error: </span>
+          {state.message}
         </p>
         <button
           type="button"
@@ -241,10 +298,16 @@ export function RegulatoryFileSection({ itemId }: { itemId: string }) {
     )
   }
 
-  // status === 'completed'
+  // status === 'completed' — render the full dossier with Phase 2 props wired in
   return (
     <div className="py-4">
-      <RegulatoryFileView file={state.file} />
+      <RegulatoryFileView
+        file={state.file}
+        onFindCommentary={handleFindCommentary}
+        commentarySearching={commentarySearching}
+        commentaryError={commentaryError}
+        onClearCommentaryError={() => setCommentaryError(null)}
+      />
     </div>
   )
 }
