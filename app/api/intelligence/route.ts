@@ -14,9 +14,16 @@ export async function GET(request: NextRequest) {
     const product_areas = searchParams.getAll('product_area')
     const functions = searchParams.getAll('function')
 
+    const rawSourceGroup = searchParams.get('source_group')
+    const source_group =
+      rawSourceGroup === 'core_fs' || rawSourceGroup === 'adjacent' || rawSourceGroup === 'sector_specific'
+        ? rawSourceGroup
+        : undefined
+
     const filters: IntelligenceFilters = {
       search: searchParams.get('search') || undefined,
       source_name: searchParams.get('source_name') || undefined,
+      source_group,
       urgency: (searchParams.get('urgency') as Urgency) || undefined,
       content_type: (searchParams.get('content_type') as ContentType) || undefined,
       regulatory_theme: (searchParams.get('regulatory_theme') as RegulatoryTheme) || undefined,

@@ -4,18 +4,36 @@ import { ingestBoE } from './boe'
 import { ingestICO } from './ico'
 import { ingestHMT } from './hmt'
 import { ingestCompaniesHouse } from './companies-house'
+// Phase 2 sources
+import { ingestFOS } from './fos'
+import { ingestFSCS } from './fscs'
+import { ingestPSR } from './psr'
+import { ingestTPR } from './tpr'
+import { ingestASA } from './asa'
+import { ingestOfcom } from './ofcom'
+import { ingestGamblingCommission } from './gambling-commission'
 import { upsertIntelligenceItems, updateSourceHealth } from '../db/intelligence'
 import type { RawSourceItem, SourceResult } from '../types'
 
 type SourceFn = () => Promise<SourceResult & { items: RawSourceItem[] }>
 
 const SOURCES: Record<string, SourceFn> = {
-  FCA: ingestFCA,
-  PRA: ingestPRA,
+  // Core FS
+  'FCA': ingestFCA,
+  'PRA': ingestPRA,
   'Bank of England': ingestBoE,
-  ICO: ingestICO,
   'HM Treasury': ingestHMT,
+  'PSR': ingestPSR,
+  // Adjacent
+  'ICO': ingestICO,
   'Companies House': ingestCompaniesHouse,
+  'FOS': ingestFOS,
+  'FSCS': ingestFSCS,
+  // Sector-specific
+  'TPR': ingestTPR,
+  'ASA': ingestASA,
+  'Ofcom': ingestOfcom,
+  'Gambling Commission': ingestGamblingCommission,
 }
 
 export interface IngestionSummary {
@@ -43,7 +61,6 @@ async function runSource(name: string, fn: SourceFn): Promise<SourceResult> {
       items_new: 0,
       errors: [`[${name}] Source function threw: ${msg}`],
     }
-    // Record failure in health tracking (best-effort)
     await updateSourceHealth(name, {
       success: false,
       items_fetched: 0,
@@ -84,7 +101,6 @@ async function runSource(name: string, fn: SourceFn): Promise<SourceResult> {
     }
   }
 
-  // Determine overall success: source returned items (or had none) without fatal errors
   const hasFatalErrors = result.errors.some(
     (e) => e.includes('Failed') || e.includes('threw') || e.includes('Timed out')
   )
@@ -111,7 +127,6 @@ export async function runAllSources(): Promise<IngestionSummary> {
   let total_fetched = 0
   let total_new = 0
 
-  // Run all sources concurrently — each is isolated
   const results = await Promise.allSettled(
     Object.entries(SOURCES).map(([name, fn]) => runSource(name, fn))
   )
@@ -123,7 +138,6 @@ export async function runAllSources(): Promise<IngestionSummary> {
       allErrors.push(`Unexpected orchestrator error: ${settled.reason}`)
       continue
     }
-
     const r = settled.value
     total_fetched += r.items_fetched
     total_new += r.items_new

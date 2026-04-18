@@ -30,6 +30,12 @@ export function Header() {
             >
               Dashboard
             </Link>
+            <Link
+              href="/roadmap"
+              className="px-3 py-2 text-sm font-medium text-gray-600 rounded-lg hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            >
+              Roadmap
+            </Link>
             {user && (
               <Link
                 href="/workspace"

@@ -6,6 +6,7 @@ import type {
   PaginatedResponse,
   IngestionRun,
 } from '../types'
+import { getSourcesByCategory } from '../sources/source-registry'
 
 // ============================================================
 // Intelligence Item Queries
@@ -18,6 +19,7 @@ export async function getIntelligenceItems(
   const {
     search,
     source_name,
+    source_group,
     urgency,
     content_type,
     regulatory_theme,
@@ -50,7 +52,16 @@ export async function getIntelligenceItems(
     )
   }
 
-  if (source_name) query = query.eq('source_name', source_name)
+  // source_group expands to an IN clause over all sources in that category.
+  // source_name (exact) takes precedence over source_group if both are set.
+  if (source_name) {
+    query = query.eq('source_name', source_name)
+  } else if (source_group) {
+    const groupSources = getSourcesByCategory(source_group)
+    if (groupSources.length > 0) {
+      query = query.in('source_name', groupSources)
+    }
+  }
   if (urgency) query = query.eq('urgency', urgency)
   if (content_type) query = query.eq('content_type', content_type)
   if (regulatory_theme) query = query.eq('regulatory_theme', regulatory_theme)

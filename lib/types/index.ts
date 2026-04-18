@@ -121,6 +121,14 @@ export interface AISummaryOutput {
 export interface IntelligenceFilters {
   search?: string
   source_name?: string
+  /**
+   * Source group — filters to all sources belonging to a category.
+   * Expands to an IN clause in the DB query.
+   *   core_fs         → FCA, PRA, Bank of England, HM Treasury, PSR
+   *   adjacent        → FOS, FSCS, ICO, Companies House
+   *   sector_specific → TPR, ASA, Ofcom, Gambling Commission
+   */
+  source_group?: 'core_fs' | 'adjacent' | 'sector_specific'
   urgency?: Urgency
   content_type?: ContentType
   regulatory_theme?: RegulatoryTheme
