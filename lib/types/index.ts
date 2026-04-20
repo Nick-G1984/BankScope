@@ -129,6 +129,13 @@ export interface IntelligenceFilters {
    *   sector_specific → TPR, ASA, Ofcom, Gambling Commission
    */
   source_group?: 'core_fs' | 'adjacent' | 'sector_specific'
+  /**
+   * Firm classification slug (e.g. 'ifa', 'mortgage_broker').
+   * When set, takes precedence over source_group and source_name.
+   * The DB layer looks up the classification's regulators array and expands
+   * to an IN clause over source_name, so the feed is narrowed to relevant bodies.
+   */
+  firm_classification?: string
   urgency?: Urgency
   content_type?: ContentType
   regulatory_theme?: RegulatoryTheme
@@ -354,3 +361,62 @@ export interface DashboardStats {
   today_items: number
   sources_active: number
 }
+
+// ============================================================
+// FIRM CLASSIFICATION TYPES (Phase 3)
+// ============================================================
+
+/**
+ * AI-generated scope summary stored in firm_classifications.scope_summary.
+ * All fields are optional so partially-generated summaries render safely.
+ */
+export interface ScopeSummary {
+  high_level_overview: string
+  key_regulations: string[]
+  key_regulators: string[]
+  compliance_tasks: string[]
+  suggested_deliverables: string[]
+}
+
+/** Matches the firm_classifications DB table */
+export interface FirmClassification {
+  id: string
+  slug: string
+  name: string
+  description: string
+  services: string[]
+  regulators: string[]          // source_name values, e.g. 'FCA', 'ICO'
+  obligations: string[]         // legislative frameworks, e.g. 'SMCR', 'Consumer Duty'
+  scope_summary: ScopeSummary | null
+  scope_enriched_at: string | null  // ISO 8601
+  created_at: string
+  updated_at: string
+}
+
+/** Slim version for dropdowns — avoids fetching heavy scope_summary */
+export interface FirmClassificationStub {
+  id: string
+  slug: string
+  name: string
+  description: string
+  regulators: string[]
+}
+
+export type ComplianceTaskStatus = 'todo' | 'in_progress' | 'done'
+
+/** Matches the compliance_tasks DB table */
+export interface ComplianceTask {
+  id: string
+  user_id: string
+  classification_id: string
+  task: string
+  status: ComplianceTaskStatus
+  due_date: string | null   // ISO date YYYY-MM-DD
+  created_at: string
+  updated_at: string
+}
+
+export type ComplianceTaskInsert = Pick<
+  ComplianceTask,
+  'classification_id' | 'task' | 'status' | 'due_date'
+>

@@ -7,6 +7,7 @@ import type {
   IngestionRun,
 } from '../types'
 import { getSourcesByCategory } from '../sources/source-registry'
+import { getFirmClassificationBySlug } from './firm-classifications'
 
 // ============================================================
 // Intelligence Item Queries
@@ -20,6 +21,7 @@ export async function getIntelligenceItems(
     search,
     source_name,
     source_group,
+    firm_classification,
     urgency,
     content_type,
     regulatory_theme,
@@ -52,9 +54,17 @@ export async function getIntelligenceItems(
     )
   }
 
-  // source_group expands to an IN clause over all sources in that category.
-  // source_name (exact) takes precedence over source_group if both are set.
-  if (source_name) {
+  // Source filtering priority:
+  //   1. firm_classification — looks up classification regulators and expands to IN clause
+  //   2. source_name (exact match) — takes precedence over source_group
+  //   3. source_group — expands to IN clause over category sources
+  if (firm_classification) {
+    // Look up the classification's regulators and use them as the source filter
+    const classification = await getFirmClassificationBySlug(firm_classification)
+    if (classification && classification.regulators.length > 0) {
+      query = query.in('source_name', classification.regulators)
+    }
+  } else if (source_name) {
     query = query.eq('source_name', source_name)
   } else if (source_group) {
     const groupSources = getSourcesByCategory(source_group)

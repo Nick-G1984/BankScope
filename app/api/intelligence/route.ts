@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       search: searchParams.get('search') || undefined,
       source_name: searchParams.get('source_name') || undefined,
       source_group,
+      firm_classification: searchParams.get('firm_classification') || undefined,
       urgency: (searchParams.get('urgency') as Urgency) || undefined,
       content_type: (searchParams.get('content_type') as ContentType) || undefined,
       regulatory_theme: (searchParams.get('regulatory_theme') as RegulatoryTheme) || undefined,
